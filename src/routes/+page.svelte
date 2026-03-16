@@ -3,6 +3,7 @@
   import AlbumCard from '$lib/components/AlbumCard.svelte';
   import DetailView from '$lib/components/DetailView.svelte';
   import StackedView from '$lib/components/StackedView.svelte';
+  import GraphView from '$lib/components/GraphView.svelte';
   import { fetchCollection, getGenres } from '$lib/data.js';
 
   let records = [];
@@ -165,6 +166,14 @@
         <button class="vbtn" class:active={viewMode === 'grid'} on:click={() => viewMode = 'grid'} title="Grid view">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
         </button>
+        <button class="vbtn" class:active={viewMode === 'graph'} on:click={() => viewMode = 'graph'} title="Artist graph">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <circle cx="3"  cy="13" r="2"/><circle cx="8"  cy="3"  r="2"/><circle cx="13" cy="10" r="2"/>
+            <line x1="3" y1="13" x2="8"  y2="3"  stroke="currentColor" stroke-width="1.5"/>
+            <line x1="8" y1="3"  x2="13" y2="10" stroke="currentColor" stroke-width="1.5"/>
+            <line x1="3" y1="13" x2="13" y2="10" stroke="currentColor" stroke-width="1.5"/>
+          </svg>
+        </button>
       </div>
       {#if !loading}
         <span class="muted">{visibleCount} of {records.length}</span>
@@ -202,6 +211,11 @@
         on:open={e => openDetail(e.detail.record, e.detail.artUrl)}
       />
     {/if}
+  {:else if viewMode === 'graph'}
+    <GraphView
+      records={filteredRecords}
+      on:filter={e => { search = e.detail.artist; viewMode = 'stacked'; }}
+    />
   {:else}
     <div class="grid">
       {#each records as record (record.id)}
