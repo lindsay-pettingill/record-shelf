@@ -467,4 +467,25 @@
     0%, 100% { opacity: 0.5; }
     50% { opacity: 1; }
   }
+
+  /* ── Mobile ── */
+  @media (max-width: 640px) {
+    header {
+      grid-template-columns: auto 1fr;
+      grid-template-rows: auto auto;
+      gap: 0.75rem;
+      padding: 1rem 1.25rem 0.75rem;
+    }
+
+    .right-controls { grid-column: 2; justify-content: flex-end; }
+    .search-wrap    { grid-column: 1 / -1; }
+
+    .chips { padding: 0 1.25rem 1rem; gap: 5px; }
+    .chip  { font-size: 11px; padding: 4px 11px; }
+
+    .grid {
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      padding: 0 1.25rem;
+    }
+  }
 </style>

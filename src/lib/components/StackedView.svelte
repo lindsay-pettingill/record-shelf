@@ -10,9 +10,10 @@
   export let reforming  = false;
   export let resetKey   = 0;
 
-  let activeIndex  = 0;
-  let artMap       = {};
+  let activeIndex   = 0;
+  let artMap        = {};
   let hoveredRecIdx = null;
+  let touchStartX   = null;
 
   $: resetKey, (activeIndex = 0);
   $: if (records) activeIndex = Math.min(activeIndex, Math.max(0, records.length - 1));
@@ -37,7 +38,12 @@
   ];
 
   onMount(() => {
-    records.forEach(r => {
+    // Load active record first, then the rest
+    const sorted = [
+      records[activeIndex],
+      ...records.filter((_, i) => i !== activeIndex),
+    ].filter(Boolean);
+    sorted.forEach(r => {
       requestArt(r.id, r.artist, r.album, url => {
         artMap = { ...artMap, [r.id]: url };
       });
@@ -57,6 +63,18 @@
     if (e.deltaY > 10) next();
     else if (e.deltaY < -10) prev();
   }
+
+  function handleTouchStart(e) {
+    touchStartX = e.touches[0].clientX;
+  }
+  function handleTouchEnd(e) {
+    if (touchStartX === null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    touchStartX = null;
+    if (Math.abs(dx) < 12) return; // tap — let click handler fire
+    if (dx < 0) next();
+    else prev();
+  }
 </script>
 
 <svelte:window on:keydown={handleKeydown} />
@@ -65,7 +83,11 @@
 
   <!-- Stack — anchored to bottom-left -->
   <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="stack-area" on:wheel|preventDefault={handleWheel}>
+  <div class="stack-area"
+    on:wheel|preventDefault={handleWheel}
+    on:touchstart={handleTouchStart}
+    on:touchend={handleTouchEnd}
+  >
     <div
       class="track"
       style="
@@ -159,7 +181,7 @@
             <button class="nav-btn" on:click={prev} disabled={activeIndex === 0}>←</button>
             <button class="nav-btn" on:click={next} disabled={activeIndex === records.length - 1}>→</button>
           </div>
-          <p class="hint">scroll · arrows · click stack to browse · click front to open</p>
+          <p class="hint">scroll · swipe · arrows · tap to open</p>
         {:else}
           <p class="hint previewing">click to select</p>
         {/if}
@@ -360,4 +382,53 @@
     letter-spacing: 0.04em; text-transform: uppercase; margin: 0;
   }
   .hint.previewing { color: rgba(255,255,255,0.35); }
+
+  /* ── Mobile ── */
+  @media (max-width: 640px) {
+    .shell {
+      grid-template-columns: 1fr;
+      grid-template-rows: 1fr auto;
+      height: calc(100vh - 64px);
+    }
+
+    .stack-area {
+      padding: 0 1rem 3rem 1.5rem;
+      justify-content: center;
+    }
+
+    .info-panel {
+      border-left: none;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      height: auto;
+      flex-direction: row;
+      align-items: center;
+      padding: 0.75rem 1.25rem;
+      gap: 1rem;
+    }
+
+    .info-inner {
+      flex-direction: row;
+      align-items: center;
+      padding: 0;
+      gap: 0.75rem;
+      overflow: hidden;
+    }
+
+    /* Hide thumbnail and badges on mobile — keep title/artist/nav */
+    .thumb-wrap, .thumb-placeholder, .badges, .counter, .meta, .notes {
+      display: none;
+    }
+
+    .title { font-size: 0.95rem; margin: 0; }
+    .artist { font-size: 0.78rem; margin: 0; }
+
+    .panel-footer {
+      padding: 0;
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+
+    .nav-row { margin-bottom: 0; }
+    .hint { display: none; }
+  }
 </style>
