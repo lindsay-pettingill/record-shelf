@@ -1,6 +1,6 @@
 <script>
   import { createEventDispatcher, onMount } from 'svelte';
-  import { requestArt } from '$lib/artloader.js';
+  import { requestArt, requestDetails } from '$lib/artloader.js';
 
   export let record;
   export let artUrl;
@@ -9,6 +9,24 @@
   const dispatch = createEventDispatcher();
 
   let relatedArtMap = {};
+  let details = null;
+
+  $: {
+    details = null;
+    requestDetails(record.id, record.artist, record.album, d => { details = d; });
+  }
+
+  function formatDuration(ms) {
+    const s = Math.round(ms / 1000);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  }
+
+  function listenUrl(service) {
+    const q = encodeURIComponent(`${record.artist} ${record.album}`);
+    return service === 'spotify'
+      ? `https://open.spotify.com/search/${q}`
+      : `https://music.apple.com/search?term=${q}`;
+  }
 
   $: moreByArtist = allRecords.filter(
     r => r.artist === record.artist && r.id !== record.id
@@ -104,10 +122,48 @@
             <span class="sep">·</span>
             <span class="genre">{record.genre}</span>
           {/if}
+          {#if details?.label}
+            <span class="sep">·</span>
+            <span class="label-name">{details.label}{details.catalog ? ' · ' + details.catalog : ''}</span>
+          {/if}
+        </div>
+
+        <!-- Listen buttons -->
+        <div class="listen-row">
+          <a href={listenUrl('spotify')} target="_blank" rel="noopener noreferrer" class="listen-btn spotify">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+            Spotify
+          </a>
+          <a href={listenUrl('apple')} target="_blank" rel="noopener noreferrer" class="listen-btn apple">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M23.994 6.124a9.23 9.23 0 00-.24-2.19c-.317-1.31-1.064-2.31-2.05-3.06A5.022 5.022 0 0019.7.27c-.91-.19-1.84-.17-2.72.03-.13.03-.26.07-.39.11-.2.06-.39.14-.59.2-.76.27-1.46.64-2.02 1.17-.08.07-.15.14-.22.22-.47.44-.86.96-1.11 1.56-.13.32-.22.65-.29.99-.08.43-.1.86-.07 1.29.03.38.08.76.18 1.13-.36.09-.72.19-1.07.3-1.3.4-2.49 1.02-3.5 1.88-1.2 1.01-2.1 2.33-2.58 3.85-.46 1.48-.5 3.07-.12 4.58.36 1.43 1.07 2.74 2.08 3.8 1.01 1.07 2.29 1.87 3.7 2.27 1.36.39 2.81.41 4.19.07 1.12-.27 2.18-.78 3.08-1.5.9-.71 1.62-1.63 2.1-2.67.49-1.04.74-2.19.72-3.35V8.7a9.51 9.51 0 005.33 1.62v-3.1a5.67 5.67 0 01-2.19-.62 5.7 5.7 0 01-1.79-1.49z"/></svg>
+            Apple Music
+          </a>
         </div>
 
         {#if record.notes}
           <p class="notes">{record.notes}</p>
+        {/if}
+
+        <!-- Tracklist -->
+        {#if details?.tracklist?.length}
+          <div class="section">
+            <div class="section-label">Tracklist</div>
+            <ol class="tracklist">
+              {#each details.tracklist as track}
+                <li class="track">
+                  <span class="track-num">{track.position}</span>
+                  <span class="track-title">{track.title}</span>
+                  {#if track.length}
+                    <span class="track-dur">{formatDuration(track.length)}</span>
+                  {/if}
+                </li>
+              {/each}
+            </ol>
+          </div>
+        {:else if details !== null && !details?.tracklist?.length}
+          <!-- details loaded but no tracklist — show nothing -->
+        {:else}
+          <!-- still loading — show nothing (no skeleton needed) -->
         {/if}
 
         <!-- More by artist -->
@@ -294,11 +350,83 @@
   }
   .sep { color: rgba(255,255,255,0.2); }
 
+  .label-name {
+    color: rgba(255, 255, 255, 0.25);
+  }
+
   .notes {
     font-size: 13px;
     color: rgba(255, 255, 255, 0.4);
     font-style: italic;
     margin-bottom: 1.5rem;
+  }
+
+  /* Listen buttons */
+  .listen-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 1.5rem;
+  }
+
+  .listen-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 100px;
+    font-size: 12px;
+    font-weight: 500;
+    text-decoration: none;
+    letter-spacing: 0.01em;
+    transition: opacity 0.15s, transform 0.15s;
+    border: 1px solid transparent;
+  }
+  .listen-btn:hover { opacity: 0.8; transform: translateY(-1px); }
+
+  .listen-btn.spotify {
+    background: rgba(30, 215, 96, 0.12);
+    border-color: rgba(30, 215, 96, 0.3);
+    color: #1ed760;
+  }
+
+  .listen-btn.apple {
+    background: rgba(252, 60, 68, 0.12);
+    border-color: rgba(252, 60, 68, 0.3);
+    color: #fc3c44;
+  }
+
+  /* Tracklist */
+  .tracklist {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .track {
+    display: grid;
+    grid-template-columns: 24px 1fr auto;
+    align-items: baseline;
+    gap: 8px;
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .track:last-child { border-bottom: none; }
+
+  .track-num {
+    font-size: 10px;
+    color: rgba(255,255,255,0.2);
+    text-align: right;
+  }
+  .track-title {
+    font-size: 12px;
+    color: rgba(255,255,255,0.65);
+  }
+  .track-dur {
+    font-size: 10px;
+    color: rgba(255,255,255,0.25);
+    font-variant-numeric: tabular-nums;
   }
 
   /* Related sections */
