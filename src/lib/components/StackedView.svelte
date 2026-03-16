@@ -27,9 +27,9 @@
   $: isPreviewing  = !!previewRecord;
 
   // Stack geometry — steep diagonal, dramatic depth
-  const OFFSET   = 28;   // wide horizontal step — more horizontal like the video
-  const TOP      = 11;   // vertical step (ratio ~2.5:1, much flatter angle)
-  const MAX_SHOW = 18;
+  const OFFSET   = 38;   // option B: wide offset relative to card size
+  const TOP      = 12;
+  const MAX_SHOW = 16;
 
   $: orderedIndices = [
     ...records.slice(activeIndex).map((_, i) => activeIndex + i),
@@ -190,16 +190,16 @@
   /* Track: same size as front card — cards overflow upward via negative translateY */
   .track {
     position: relative;
-    width:  420px;
-    height: 420px;
+    width:  320px;
+    height: 320px;
     flex-shrink: 0;
   }
 
   /* ── Cards ── */
   .card {
     position: absolute;
-    width:  420px;
-    height: 420px;
+    width:  320px;
+    height: 320px;
     border-radius: 8px;
     overflow: hidden;
     will-change: transform, filter, opacity;
@@ -257,7 +257,7 @@
     background: linear-gradient(135deg, #3a3a3a, #4a4a4a);
     display: flex; align-items: center; justify-content: center;
   }
-  .placeholder span { font-size: 6rem; font-weight: 700; color: rgba(255,255,255,0.22); }
+  .placeholder span { font-size: 4.5rem; font-weight: 700; color: rgba(255,255,255,0.22); }
 
   .open-hint {
     position: absolute;
