@@ -215,6 +215,7 @@
     <GraphView
       records={filteredRecords}
       on:filter={e => { search = e.detail.artist; viewMode = 'stacked'; }}
+      on:open={e => openDetail(e.detail.record, e.detail.artUrl)}
     />
   {:else}
     <div class="grid">
