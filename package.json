@@ -17,6 +17,7 @@
   "type": "module",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.79.0",
-    "@sveltejs/adapter-auto": "^7.0.1"
+    "@sveltejs/adapter-auto": "^7.0.1",
+    "@sveltejs/adapter-node": "^5.5.4"
   }
 }
