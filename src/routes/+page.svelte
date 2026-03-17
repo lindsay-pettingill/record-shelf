@@ -61,6 +61,14 @@
     discovering = false;
   }
 
+  function pickRandom() {
+    if (!records.length) return;
+    const r = records[Math.floor(Math.random() * records.length)];
+    import('$lib/artloader.js').then(({ requestArt }) => {
+      requestArt(r.id, r.artist, r.album, url => openDetail(r, url));
+    });
+  }
+
   function clearDiscover() {
     discoverReasons = {};
     search = '';
@@ -243,6 +251,11 @@ onMount(async () => {
       {/if}
     </div>
     <div class="right-controls">
+      <button class="vbtn random-btn" on:click={pickRandom} title="Play a random record" disabled={loading}>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M10.5 3h3.5v3.5M14 3l-4 4M5.5 13H2v-3.5M2 13l4-4M10.5 13H14v-3.5M14 13l-4-4M5.5 3H2v3.5M2 3l4 4" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
       <div class="view-controls">
         <!-- Browse picker: shelf / crate / grid -->
         <!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -620,6 +633,12 @@ onMount(async () => {
     background: rgba(255,255,255,0.1);
     color: #fff;
   }
+
+  .random-btn {
+    width: 30px;
+    height: 30px;
+  }
+  .random-btn:disabled { opacity: 0.2; cursor: default; }
 
   .muted {
     font-size: 13px;
