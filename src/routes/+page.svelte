@@ -252,8 +252,12 @@ onMount(async () => {
     </div>
     <div class="right-controls">
       <button class="vbtn random-btn" on:click={pickRandom} title="Play a random record" disabled={loading}>
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-          <path d="M10.5 3h3.5v3.5M14 3l-4 4M5.5 13H2v-3.5M2 13l4-4M10.5 13H14v-3.5M14 13l-4-4M5.5 3H2v3.5M2 3l4 4" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="16 3 21 3 21 8"/>
+          <line x1="4" y1="20" x2="21" y2="3"/>
+          <polyline points="21 16 21 21 16 21"/>
+          <line x1="15" y1="15" x2="21" y2="21"/>
+          <line x1="4" y1="4" x2="9" y2="9"/>
         </svg>
       </button>
       <div class="view-controls">

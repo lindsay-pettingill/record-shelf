@@ -24,7 +24,6 @@
   let dragging     = null;
   let frameId;
 
-  let modalArtMap = {};
   let nodeArtMap  = {};   // artist → art url (for node circles)
   let hoveredGenre = null;
   let clearTimer;
@@ -42,16 +41,6 @@
     hoveredNode = null;
     clearTimer  = setTimeout(() => { hoveredGenre = null; }, 80);
   }
-
-  const MODAL_W = 340, MODAL_H = 400;
-  $: modalPos = selectedNode ? (() => {
-    const n = selectedNode;
-    const x = n.x < width / 2
-      ? Math.min(n.x + n.r + 20, width  - MODAL_W - 10)
-      : Math.max(n.x - n.r - MODAL_W - 20, 10);
-    const y = Math.max(20, Math.min(n.y - MODAL_H / 2, height - MODAL_H - 20));
-    return { x, y };
-  })() : { x: 0, y: 0 };
 
   // ── Build graph ───────────────────────────────────────────────────────
   function buildGraph(recs, w, h) {
@@ -237,16 +226,16 @@
   function nodeColor(genre) { return GENRE_COLORS[genre] ?? '#888'; }
 
   function handleClick(node) {
-    selectedNode = selectedNode === node ? null : node;
-    if (selectedNode) {
-      selectedNode.recs.forEach(r => {
-        if (!modalArtMap[r.id]) {
-          requestArt(r.id, r.artist, r.album, url => {
-            modalArtMap = { ...modalArtMap, [r.id]: url };
-          });
-        }
-      });
+    if (selectedNode === node) {
+      selectedNode = null;
+      return;
     }
+    selectedNode = node;
+    // Open the first record in the full DetailView
+    const r = node.recs[0];
+    requestArt(r.id, r.artist, r.album, url => {
+      dispatch('open', { record: r, artUrl: url });
+    });
   }
 
   function clearSelection() { selectedNode = null; }
@@ -286,10 +275,7 @@
     return e.strength > 0.5 ? 0.14 : 0.05;
   }
 
-  const MINI_CARD = 180;
-  const MINI_OFFSET = 26;
-  const MINI_TOP = 9;
-  const MINI_MAX = 10;
+
 </script>
 
 <div class="wrap">
@@ -490,60 +476,10 @@
           <li>{album}</li>
         {/each}
       </ul>
-      <div class="tt-hint">click to explore</div>
+      <div class="tt-hint">click to open</div>
     </div>
   {/if}
 
-  <!-- Artist modal -->
-  {#if selectedNode}
-    {@const n     = selectedNode}
-    {@const color = nodeColor(n.genre)}
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <div class="backdrop" on:click={clearSelection}></div>
-
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <div class="modal" style="left:{modalPos.x}px; top:{modalPos.y}px; --accent:{color};" on:click|stopPropagation>
-      <div class="modal-head">
-        <div class="modal-title-group">
-          <div class="modal-artist">{n.id}</div>
-          <div class="modal-genre" style="color:{color}">{n.genre} · {n.recs.length} album{n.recs.length !== 1 ? 's' : ''}</div>
-        </div>
-        <button class="modal-x" on:click={clearSelection}>✕</button>
-      </div>
-
-      <!-- Mini stack -->
-      <div class="mini-stage">
-        <div class="mini-track" style="width:{MINI_CARD}px; height:{MINI_CARD}px;">
-          {#each n.recs.slice(0, MINI_MAX) as rec, i}
-            {@const art   = modalArtMap[rec.id]}
-            {@const tx    = i * MINI_OFFSET}
-            {@const ty    = i * -MINI_TOP}
-            {@const scale = Math.max(0.35, 1 - i * 0.04)}
-            {@const zi    = MINI_MAX - i}
-            <!-- svelte-ignore a11y-click-events-have-key-events -->
-            <!-- svelte-ignore a11y-no-static-element-interactions -->
-            <div
-              class="mini-card"
-              style="width:{MINI_CARD}px; height:{MINI_CARD}px; --tx:{tx}px; --ty:{ty}px; --s:{scale}; z-index:{zi};"
-              on:click={() => dispatch('open', { record: rec, artUrl: modalArtMap[rec.id] ?? null })}
-            >
-              {#if art}
-                <img src={art} alt={rec.album} class="mini-art" on:error={e => e.target.style.display='none'} />
-              {:else}
-                <div class="mini-placeholder">
-                  <span>{rec.artist?.replace(/^(The |A )/i,'')[0]?.toUpperCase()}</span>
-                </div>
-              {/if}
-            </div>
-          {/each}
-        </div>
-      </div>
-
-      <p class="modal-hint">click any record to view details</p>
-    </div>
-  {/if}
 </div>
 
 <style>
@@ -677,126 +613,4 @@
     margin-top: 8px;
   }
 
-  /* ── Modal ── */
-  .backdrop {
-    position: absolute;
-    inset: 0;
-    background: rgba(0,0,0,0.55);
-    backdrop-filter: blur(4px);
-    z-index: 30;
-  }
-
-  .modal {
-    position: absolute;
-    z-index: 40;
-    background: rgba(14,14,14,0.96);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-top: 2px solid var(--accent, rgba(255,255,255,0.2));
-    border-radius: 18px;
-    padding: 1.5rem 2rem 1.25rem;
-    backdrop-filter: blur(20px);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1.25rem;
-    min-width: 320px;
-    box-shadow: 0 30px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.06);
-  }
-
-  .modal-head {
-    width: 100%;
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 1rem;
-  }
-
-  .modal-artist {
-    font-size: 1.1rem;
-    font-weight: 700;
-    color: #fff;
-    letter-spacing: -0.02em;
-  }
-
-  .modal-genre {
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    margin-top: 3px;
-  }
-
-  .modal-x {
-    background: none;
-    border: none;
-    color: rgba(255,255,255,0.3);
-    font-size: 15px;
-    cursor: pointer;
-    padding: 2px 4px;
-    line-height: 1;
-    flex-shrink: 0;
-    transition: color 0.15s;
-  }
-  .modal-x:hover { color: rgba(255,255,255,0.7); }
-
-  /* ── Mini stack ── */
-  .mini-stage {
-    display: flex;
-    align-items: flex-end;
-    justify-content: flex-start;
-    padding-top: 80px;
-    padding-right: 200px;
-  }
-
-  .mini-track {
-    position: relative;
-    flex-shrink: 0;
-  }
-
-  .mini-card {
-    position: absolute;
-    border-radius: 6px;
-    overflow: hidden;
-    cursor: pointer;
-    transform: translateX(var(--tx)) translateY(var(--ty)) scale(var(--s));
-    transition:
-      transform  0.28s cubic-bezier(0.2,0,0,1),
-      filter     0.2s ease,
-      box-shadow 0.28s ease;
-  }
-
-  .mini-track:has(.mini-card:hover) .mini-card {
-    filter: grayscale(60%) brightness(0.7);
-    transition: filter 0.2s ease, transform 0.28s cubic-bezier(0.2,0,0,1), box-shadow 0.28s ease;
-  }
-
-  .mini-card:hover {
-    transform: translateX(var(--tx)) translateY(calc(var(--ty) - 60px)) scale(var(--s)) !important;
-    filter: saturate(1.3) brightness(1.1) !important;
-    z-index: 999 !important;
-    box-shadow: 0 24px 60px rgba(0,0,0,0.85);
-    transition:
-      transform  0.15s cubic-bezier(0.15,0,0,1),
-      filter     0.12s ease,
-      box-shadow 0.15s ease !important;
-  }
-
-  .mini-art {
-    width: 100%; height: 100%;
-    object-fit: cover; display: block; pointer-events: none;
-  }
-
-  .mini-placeholder {
-    width: 100%; height: 100%;
-    background: linear-gradient(135deg, #2e2e2e, #3a3a3a);
-    display: flex; align-items: center; justify-content: center;
-  }
-  .mini-placeholder span { font-size: 3rem; font-weight: 700; color: rgba(255,255,255,0.2); }
-
-  .modal-hint {
-    font-size: 9px;
-    color: rgba(255,255,255,0.18);
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-    margin: 0;
-  }
 </style>
