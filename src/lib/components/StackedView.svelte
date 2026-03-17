@@ -195,7 +195,7 @@
   .shell {
     display: grid;
     grid-template-columns: 1fr 280px;
-    height: calc(100vh - 80px);
+    height: 100%;
     overflow: hidden;
   }
 
@@ -388,7 +388,7 @@
     .shell {
       grid-template-columns: 1fr;
       grid-template-rows: 1fr auto;
-      height: calc(100vh - 64px);
+      height: 100%;
     }
 
     .stack-area {

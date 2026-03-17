@@ -195,43 +195,45 @@
     </div>
   {/if}
 
-  {#if loading}
-    <div class="loading-grid">
-      {#each Array(12) as _}
-        <div class="skeleton"></div>
-      {/each}
-    </div>
-  {:else if viewMode === 'stacked'}
-    {#if !selectedRecord}
-      <StackedView
-        records={filteredRecords}
-        {scattering}
-        {reforming}
-        resetKey={stackResetKey}
-        on:open={e => openDetail(e.detail.record, e.detail.artUrl)}
-      />
-    {/if}
-  {:else if viewMode === 'graph'}
-    <GraphView
-      records={filteredRecords}
-      on:filter={e => { search = e.detail.artist; viewMode = 'stacked'; }}
-      on:open={e => openDetail(e.detail.record, e.detail.artUrl)}
-    />
-  {:else}
-    <div class="grid">
-      {#each records as record (record.id)}
-        <AlbumCard
-          {record}
-          visible={visibilityMap[record.id]}
+  <div class="content">
+    {#if loading}
+      <div class="loading-grid">
+        {#each Array(12) as _}
+          <div class="skeleton"></div>
+        {/each}
+      </div>
+    {:else if viewMode === 'stacked'}
+      {#if !selectedRecord}
+        <StackedView
+          records={filteredRecords}
           {scattering}
           {reforming}
-          scatterX={scatterMap[record.id]?.x ?? 0}
-          scatterY={scatterMap[record.id]?.y ?? 0}
+          resetKey={stackResetKey}
           on:open={e => openDetail(e.detail.record, e.detail.artUrl)}
         />
-      {/each}
-    </div>
-  {/if}
+      {/if}
+    {:else if viewMode === 'graph'}
+      <GraphView
+        records={filteredRecords}
+        on:filter={e => { search = e.detail.artist; viewMode = 'stacked'; }}
+        on:open={e => openDetail(e.detail.record, e.detail.artUrl)}
+      />
+    {:else}
+      <div class="grid">
+        {#each records as record (record.id)}
+          <AlbumCard
+            {record}
+            visible={visibilityMap[record.id]}
+            {scattering}
+            {reforming}
+            scatterX={scatterMap[record.id]?.x ?? 0}
+            scatterY={scatterMap[record.id]?.y ?? 0}
+            on:open={e => openDetail(e.detail.record, e.detail.artUrl)}
+          />
+        {/each}
+      </div>
+    {/if}
+  </div>
 {#if selectedRecord}
   <DetailView
     record={selectedRecord}
@@ -248,8 +250,22 @@
 
 <style>
   .shell {
-    min-height: 100vh;
-    padding-bottom: 4rem;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .content {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* Grid view scrolls within the content area */
+  .content:has(.grid) {
+    overflow-y: auto;
+    padding-bottom: 3rem;
   }
 
   /* Header */

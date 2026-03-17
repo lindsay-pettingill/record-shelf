@@ -405,7 +405,7 @@
   .wrap {
     position: relative;
     width: 100%;
-    height: calc(100vh - 130px);
+    height: 100%;
     overflow: hidden;
   }
 
