@@ -28,15 +28,10 @@
   $: displayArt    = previewRecord ? (artMap[previewRecord.id] ?? null) : activeArt;
   $: isPreviewing  = !!previewRecord;
 
-  // Stack geometry
-  const OFFSET      = 38;  // spread for the first FOLD cards
-  const TOP         = 12;
-  const BACK_OFFSET = 10;  // compressed spread for deeper cards
-  const BACK_TOP    = 3;
-  const FOLD        = 16;  // where compression kicks in
-
-  // Show all records; reactive so the stack grows with the collection
-  $: MAX_SHOW = records.length;
+  // Stack geometry — fixed window of evenly-spaced cards
+  const OFFSET   = 38;
+  const TOP      = 12;
+  const MAX_SHOW = 22;
 
   $: orderedIndices = [
     ...records.slice(activeIndex).map((_, i) => activeIndex + i),
@@ -125,25 +120,22 @@
         {@const record   = records[recIdx]}
         {@const isActive = stackPos === 0}
         {@const art      = artMap[record.id]}
-        {@const foldPos  = Math.min(stackPos, FOLD)}
-        {@const deepPos  = Math.max(0, stackPos - FOLD)}
-        {@const tx       = foldPos * OFFSET + deepPos * BACK_OFFSET}
-        {@const ty       = foldPos * -TOP   + deepPos * -BACK_TOP}
-        {@const scale    = Math.max(0.30, 1 - stackPos * 0.034)}
-        {@const opacity  = isActive ? 1 : Math.max(0.12, 0.92 - stackPos * 0.016)}
+        {@const show     = stackPos < MAX_SHOW}
+        {@const scale    = Math.max(0.32, 1 - stackPos * 0.034)}
+        {@const opacity  = isActive ? 1 : show ? Math.max(0.35, 1 - (stackPos / (MAX_SHOW - 1)) * 0.65) : 0}
         {@const skipAnim = noTransitionIds.has(record.id)}
         <!-- svelte-ignore a11y-click-events-have-key-events -->
         <div
           class="card"
           class:is-active={isActive}
           style="
-            --tx: {tx}px;
-            --ty: {ty}px;
+            --tx: {stackPos * OFFSET}px;
+            --ty: {stackPos * -TOP}px;
             --s:  {scale};
             --zi: {isActive ? 999 : MAX_SHOW - stackPos};
             opacity: {opacity};
-            pointer-events: {stackPos < MAX_SHOW ? 'auto' : 'none'};
-            {skipAnim ? 'transition: none;' : ''}
+            pointer-events: {show ? 'auto' : 'none'};
+            {skipAnim ? 'transition: opacity 0.28s ease, filter 0.22s ease, box-shadow 0.3s ease;' : ''}
           "
           on:click={() => openCard(record)}
           on:mouseenter={() => hoveredRecIdx = recIdx}

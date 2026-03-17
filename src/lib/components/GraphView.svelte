@@ -24,7 +24,30 @@
   let dragging     = null;
   let frameId;
 
-  let modalArtMap = {};
+  let modalArtMap  = {};
+  let hoveredGenre = null;
+  let clearTimer;
+
+  function onNodeEnter(node) {
+    clearTimeout(clearTimer);
+    hoveredNode  = node;
+    hoveredGenre = node.genre ?? null;
+  }
+  function onNodeLeave() {
+    hoveredNode = null;
+    clearTimer  = setTimeout(() => { hoveredGenre = null; }, 80);
+  }
+
+  // Modal position: place beside the clicked node, clamped within bounds
+  const MODAL_W = 340, MODAL_H = 400;
+  $: modalPos = selectedNode ? (() => {
+    const n = selectedNode;
+    const x = n.x < width / 2
+      ? Math.min(n.x + n.r + 20, width  - MODAL_W - 10)
+      : Math.max(n.x - n.r - MODAL_W - 20, 10);
+    const y = Math.max(20, Math.min(n.y - MODAL_H / 2, height - MODAL_H - 20));
+    return { x, y };
+  })() : { x: 0, y: 0 };
 
   // ── Build graph from records ──────────────────────────────────────────
   function buildGraph(recs, w, h) {
@@ -204,9 +227,6 @@
       )
     : null;
 
-  // Genre highlighted by hovering a node or legend item
-  let hoveredGenre = null;
-  $: if (hoveredNode) hoveredGenre = hoveredNode.genre ?? null;
 
   function nodeOpacity(node, idx) {
     // Selection mode takes priority
@@ -244,14 +264,15 @@
 <div class="wrap">
   <!-- Legend -->
   <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="legend">
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <div class="legend"
+    on:mouseleave={() => { clearTimeout(clearTimer); if (!hoveredNode) hoveredGenre = null; }}
+  >
     {#each Object.entries(GENRE_COLORS) as [genre, color]}
-      <!-- svelte-ignore a11y-click-events-have-key-events -->
       <span
         class="legend-item"
         class:legend-active={hoveredGenre === genre}
-        on:mouseenter={() => { if (!hoveredNode) hoveredGenre = genre; }}
-        on:mouseleave={() => { if (!hoveredNode) hoveredGenre = null; }}
+        on:mouseenter={() => { clearTimeout(clearTimer); if (!hoveredNode) hoveredGenre = genre; }}
       >
         <span class="swatch" style="background:{color}"></span>
         {genre}
@@ -308,8 +329,8 @@
           transform="translate({node.x},{node.y})"
           opacity={nodeOpacity(node, idx)}
           style="transition: opacity 0.25s;"
-          on:mouseenter={() => { hoveredNode = node; hoveredGenre = node.genre ?? null; }}
-          on:mouseleave={() => { hoveredNode = null; hoveredGenre = null; }}
+          on:mouseenter={() => onNodeEnter(node)}
+          on:mouseleave={onNodeLeave}
           on:mousedown={e => startDrag(e, node)}
           on:touchstart={e => startDrag(e, node)}
           on:click|stopPropagation={() => handleClick(node)}
@@ -376,7 +397,7 @@
 
     <!-- svelte-ignore a11y-no-static-element-interactions -->
     <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <div class="modal" on:click|stopPropagation>
+    <div class="modal" style="left:{modalPos.x}px; top:{modalPos.y}px;" on:click|stopPropagation>
 
       <!-- Header -->
       <div class="modal-head">
@@ -533,9 +554,6 @@
 
   .modal {
     position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
     z-index: 40;
     background: rgba(14,14,14,0.96);
     border: 1px solid rgba(255,255,255,0.1);
