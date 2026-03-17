@@ -10,10 +10,11 @@
   export let reforming  = false;
   export let resetKey   = 0;
 
-  let activeIndex   = 0;
-  let artMap        = {};
-  let hoveredRecIdx = null;
-  let touchStartX   = null;
+  let activeIndex      = 0;
+  let artMap           = {};
+  let hoveredRecIdx    = null;
+  let touchStartX      = null;
+  let noTransitionIds  = new Set();
 
   $: resetKey, (activeIndex = 0);
   $: if (records) activeIndex = Math.min(activeIndex, Math.max(0, records.length - 1));
@@ -56,8 +57,23 @@
   });
 
   function openCard(record) { dispatch('open', { record, artUrl: artMap[record.id] ?? null }); }
-  function next() { activeIndex = Math.min(activeIndex + 1, records.length - 1); }
-  function prev() { activeIndex = Math.max(activeIndex - 1, 0); }
+  function next() {
+    if (activeIndex >= records.length - 1) return;
+    // Card leaving front jumps to back — suppress its transition
+    const exitId = records[orderedIndices[0]]?.id;
+    noTransitionIds = new Set([exitId]);
+    activeIndex += 1;
+    requestAnimationFrame(() => { noTransitionIds = new Set(); });
+  }
+
+  function prev() {
+    if (activeIndex <= 0) return;
+    // Card coming from back to front — suppress its transition
+    const enterId = records[orderedIndices[orderedIndices.length - 1]]?.id;
+    noTransitionIds = new Set([enterId]);
+    activeIndex -= 1;
+    requestAnimationFrame(() => { noTransitionIds = new Set(); });
+  }
 
   function handleKeydown(e) {
     if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); next(); }
@@ -115,6 +131,7 @@
         {@const ty       = foldPos * -TOP   + deepPos * -BACK_TOP}
         {@const scale    = Math.max(0.30, 1 - stackPos * 0.034)}
         {@const opacity  = isActive ? 1 : Math.max(0.12, 0.92 - stackPos * 0.016)}
+        {@const skipAnim = noTransitionIds.has(record.id)}
         <!-- svelte-ignore a11y-click-events-have-key-events -->
         <div
           class="card"
@@ -126,6 +143,7 @@
             --zi: {isActive ? 999 : MAX_SHOW - stackPos};
             opacity: {opacity};
             pointer-events: {stackPos < MAX_SHOW ? 'auto' : 'none'};
+            {skipAnim ? 'transition: none;' : ''}
           "
           on:click={() => openCard(record)}
           on:mouseenter={() => hoveredRecIdx = recIdx}

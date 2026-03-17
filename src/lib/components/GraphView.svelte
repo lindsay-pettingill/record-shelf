@@ -204,17 +204,34 @@
       )
     : null;
 
+  // Genre highlighted by hovering a node or legend item
+  let hoveredGenre = null;
+  $: if (hoveredNode) hoveredGenre = hoveredNode.genre ?? null;
+
   function nodeOpacity(node, idx) {
-    if (!selectedNode) return 1;
-    if (node === selectedNode) return 1;
-    return connectedSet.has(idx) ? 0.75 : 0.12;
+    // Selection mode takes priority
+    if (selectedNode) {
+      if (node === selectedNode) return 1;
+      return connectedSet.has(idx) ? 0.75 : 0.12;
+    }
+    // Genre highlight mode
+    if (hoveredGenre) {
+      return node.genre === hoveredGenre ? 1 : 0.12;
+    }
+    return 1;
   }
 
   function edgeOpacity(e) {
-    if (!selectedNode) return e.strength > 0.5 ? 0.14 : 0.05;
-    if (nodes[e.source] === selectedNode || nodes[e.target] === selectedNode)
-      return e.strength > 0.5 ? 0.5 : 0.25;
-    return 0.02;
+    if (selectedNode) {
+      if (nodes[e.source] === selectedNode || nodes[e.target] === selectedNode)
+        return e.strength > 0.5 ? 0.5 : 0.25;
+      return 0.02;
+    }
+    if (hoveredGenre) {
+      const sameGenre = nodes[e.source]?.genre === hoveredGenre && nodes[e.target]?.genre === hoveredGenre;
+      return sameGenre ? (e.strength > 0.5 ? 0.45 : 0.18) : 0.02;
+    }
+    return e.strength > 0.5 ? 0.14 : 0.05;
   }
 
   // Mini stack constants
@@ -226,9 +243,16 @@
 
 <div class="wrap">
   <!-- Legend -->
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
   <div class="legend">
     {#each Object.entries(GENRE_COLORS) as [genre, color]}
-      <span class="legend-item">
+      <!-- svelte-ignore a11y-click-events-have-key-events -->
+      <span
+        class="legend-item"
+        class:legend-active={hoveredGenre === genre}
+        on:mouseenter={() => { if (!hoveredNode) hoveredGenre = genre; }}
+        on:mouseleave={() => { if (!hoveredNode) hoveredGenre = null; }}
+      >
         <span class="swatch" style="background:{color}"></span>
         {genre}
       </span>
@@ -284,8 +308,8 @@
           transform="translate({node.x},{node.y})"
           opacity={nodeOpacity(node, idx)}
           style="transition: opacity 0.25s;"
-          on:mouseenter={() => hoveredNode = node}
-          on:mouseleave={() => hoveredNode = null}
+          on:mouseenter={() => { hoveredNode = node; hoveredGenre = node.genre ?? null; }}
+          on:mouseleave={() => { hoveredNode = null; hoveredGenre = null; }}
           on:mousedown={e => startDrag(e, node)}
           on:touchstart={e => startDrag(e, node)}
           on:click|stopPropagation={() => handleClick(node)}
@@ -433,9 +457,13 @@
     font-size: 10px;
     color: rgba(255,255,255,0.4);
     letter-spacing: 0.04em;
+    cursor: default;
+    transition: color 0.15s;
   }
+  .legend-item:not(.muted):hover,
+  .legend-item.legend-active { color: rgba(255,255,255,0.9); }
 
-  .legend-item.muted { color: rgba(255,255,255,0.2); margin-top: 4px; }
+  .legend-item.muted { color: rgba(255,255,255,0.2); margin-top: 4px; cursor: default; }
 
   .swatch {
     width: 8px;
