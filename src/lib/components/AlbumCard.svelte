@@ -10,6 +10,7 @@
   export let reforming = false;
   export let scatterX = 0;
   export let scatterY = 0;
+  export let reason = null;
 
   let artUrl = null;
   let artFailed = false;
@@ -78,6 +79,12 @@
         {#each record.tags.split(',').map(t => t.trim()).filter(Boolean) as tag}
           <span class="tag">{tag}</span>
         {/each}
+      </div>
+    {/if}
+    {#if reason}
+      <div class="reason">
+        <svg viewBox="0 0 10 10" class="reason-record"><circle cx="5" cy="5" r="4.5" fill="#0d0d0d" stroke="rgba(180,160,255,0.55)" stroke-width="0.8"/><circle cx="5" cy="5" r="1" fill="rgba(180,160,255,0.8)"/></svg>
+        {reason}
       </div>
     {/if}
   </div>
@@ -258,5 +265,19 @@
     color: rgba(255, 255, 255, 0.45);
     text-transform: uppercase;
     letter-spacing: 0.04em;
+  }
+
+  .reason {
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
+    margin-top: 5px;
+    font-size: 9.5px;
+    color: rgba(180,160,255,0.75);
+    line-height: 1.35;
+  }
+  .reason-record {
+    width: 10px; height: 10px;
+    flex-shrink: 0; margin-top: 1px;
   }
 </style>

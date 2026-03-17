@@ -14,5 +14,9 @@
     "svelte": "^5.0.0",
     "vite": "^5.0.3"
   },
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.79.0",
+    "@sveltejs/adapter-auto": "^7.0.1"
+  }
 }

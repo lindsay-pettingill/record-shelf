@@ -2,7 +2,8 @@
   import { onMount } from 'svelte';
   import AlbumCard from '$lib/components/AlbumCard.svelte';
   import DetailView from '$lib/components/DetailView.svelte';
-  import StackedView from '$lib/components/StackedView.svelte';
+  import CrateView from '$lib/components/CrateView.svelte';
+  import ShelfView from '$lib/components/ShelfView.svelte';
   import GraphView from '$lib/components/GraphView.svelte';
   import { fetchCollection, getGenres } from '$lib/data.js';
 
@@ -12,39 +13,70 @@
   let loading = true;
   let selectedRecord = null;
   let selectedArt = null;
-  let viewMode = 'stacked'; // 'stacked' | 'grid'
+  let viewMode = 'shelf'; // 'shelf' | 'crate' | 'grid' | 'graph'
+  let preSearchViewMode = 'shelf'; // restore when search is cleared
 
   let genres = [];
   let showSuggestions = false;
-  let scatterMap = {}; // pre-computed scatter directions per record id
-  let scattering = false;
-  let reforming = false;
+  let showViewPicker = false;
+
+  const views = [
+    { id: 'shelf', label: 'Shelf' },
+    { id: 'crate', label: 'Crate' },
+    { id: 'grid',  label: 'Grid'  },
+  ];
+
+  function pickView(id) {
+    viewMode = id;
+    showViewPicker = false;
+  }
   let stackResetKey = 0;
 
-  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  // ── Discover ──
+  let discoverReasons = {}; // id → reason string
+  let discovering = false;
+  $: discoverActive = Object.keys(discoverReasons).length > 0;
+  $: searchWordCount = search.trim().split(/\s+/).filter(Boolean).length;
+  $: showRecordHint = searchWordCount >= 3 && !discoverActive && !discovering;
 
-  onMount(async () => {
+  async function runDiscover() {
+    if (discovering || searchWordCount < 3) return;
+    discovering = true;
+    showSuggestions = false;
+    try {
+      const res = await fetch('/api/recommend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: search,
+          records: records.map(r => ({ id: r.id, artist: r.artist, album: r.album, year: r.year, genre: r.genre }))
+        })
+      });
+      const { results } = await res.json();
+      discoverReasons = Object.fromEntries(results.map(r => [r.id, r.reason]));
+      if (viewMode !== 'grid') { preSearchViewMode = viewMode; viewMode = 'grid'; }
+    } catch (e) {
+      console.error('discover error', e);
+    }
+    discovering = false;
+  }
+
+  function clearDiscover() {
+    discoverReasons = {};
+    search = '';
+    stackResetKey += 1;
+    viewMode = preSearchViewMode;
+  }
+
+onMount(async () => {
     records = await fetchCollection();
     genres = ['All', ...getGenres(records)];
-    // Golden-angle scatter directions — unique per record, evenly distributed
-    records.forEach((r, i) => {
-      const angle = (i * 137.508 * Math.PI) / 180;
-      scatterMap[r.id] = { x: Math.cos(angle), y: Math.sin(angle) };
-    });
     loading = false;
   });
 
-  async function selectGenre(genre) {
-    const next = genre === activeGenre ? 'All' : genre;
-    scattering = true;
-    reforming = false;
-    await sleep(280);
-    activeGenre = next;
-    stackResetKey += 1; // pull first record of new filtered set
-    scattering = false;
-    reforming = true;
-    await sleep(30);
-    reforming = false;
+  function selectGenre(genre) {
+    activeGenre = genre === activeGenre ? 'All' : genre;
+    stackResetKey += 1;
   }
 
   // Inline activeGenre + search directly so Svelte 5 tracks them as dependencies
@@ -62,12 +94,27 @@
     return map;
   })();
 
-  $: visibleCount = Object.values(visibilityMap).filter(Boolean).length;
-  $: filteredRecords = records.filter(r => visibilityMap[r.id]);
+  $: visibleCount = discoverActive
+    ? Object.keys(discoverReasons).length
+    : Object.values(visibilityMap).filter(Boolean).length;
+  $: filteredRecords = discoverActive
+    ? records.filter(r => discoverReasons[r.id])
+    : records.filter(r => visibilityMap[r.id]);
 
-  // Reset stack position when search changes so you always start at record 1
+  // Switch to grid when searching, restore when cleared
   let prevSearch = '';
-  $: if (search !== prevSearch) { prevSearch = search; stackResetKey += 1; }
+  $: if (search !== prevSearch) {
+    const wasEmpty = prevSearch === '';
+    const isEmpty  = search === '';
+    prevSearch = search;
+    stackResetKey += 1;
+    if (!wasEmpty && isEmpty && !discoverActive) {
+      viewMode = preSearchViewMode;
+    } else if (wasEmpty && !isEmpty && viewMode !== 'grid') {
+      preSearchViewMode = viewMode;
+      viewMode = 'grid';
+    }
+  }
 
   function openDetail(record, artUrl) {
     selectedRecord = record;
@@ -117,8 +164,12 @@
   }
 
   function handleKeydown(e) {
-    if (selectedRecord) return; // detail view handles its own keys
-    if (e.key === 'Escape') { search = ''; activeGenre = 'All'; showSuggestions = false; stackResetKey += 1; }
+    if (selectedRecord) return;
+    if (e.key === 'Enter' && searchWordCount >= 3 && !discoverActive) { runDiscover(); return; }
+    if (e.key === 'Escape') {
+      if (discoverActive) { clearDiscover(); return; }
+      search = ''; activeGenre = 'All'; showSuggestions = false; stackResetKey += 1;
+    }
   }
 </script>
 
@@ -130,21 +181,54 @@
       <span class="dot">◉</span>
       <span class="name">Record Shelf</span>
     </div>
-    <div class="search-wrap">
+    <div class="search-wrap" class:search-wrap-vibe={showRecordHint || discovering || discoverActive}>
       <input
         class="search"
+        class:search-vibe={showRecordHint || discovering || discoverActive}
         type="text"
-        placeholder="Search artist, album, year…"
+        placeholder={discoverActive ? `"${search}"` : 'Search artist, album, year…'}
         bind:value={search}
         spellcheck="false"
         autocomplete="off"
-        on:focus={() => showSuggestions = true}
+        readonly={discoverActive}
+        on:focus={() => { if (!discoverActive) showSuggestions = true; }}
         on:blur={() => setTimeout(() => showSuggestions = false, 150)}
+        on:keydown={e => {
+          if (e.key === 'Enter' && searchWordCount >= 3 && !discoverActive && !discovering) {
+            e.preventDefault();
+            runDiscover();
+          }
+        }}
       />
-      {#if search}
-        <button class="clear" on:click={() => search = ''} aria-label="Clear search">✕</button>
+
+      <!-- Spinning record: hint (slow) or loading (fast) -->
+      {#if showRecordHint || discovering}
+        <!-- svelte-ignore a11y-click-events-have-key-events -->
+        <!-- svelte-ignore a11y-no-static-element-interactions -->
+        <div
+          class="record-spin"
+          class:record-spin-fast={discovering}
+          on:click={discovering ? null : runDiscover}
+          title="Press Enter to search"
+        >
+          <svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="16" cy="16" r="15" fill="#1a1a1a" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+            <circle cx="16" cy="16" r="11" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="4"/>
+            <circle cx="16" cy="16" r="7"  fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="3"/>
+            <circle cx="16" cy="16" r="1.5" fill="rgba(255,255,255,0.25)"/>
+            <path d="M 16 5 A 11 11 0 0 1 25 21" stroke="rgba(255,255,255,0.18)" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+          </svg>
+        </div>
       {/if}
-      {#if showSuggestions && suggestions.length > 0}
+
+      <!-- Clear: normal search or discover -->
+      {#if discoverActive}
+        <button class="clear" on:click={clearDiscover} aria-label="Clear discover">✕</button>
+      {:else if search}
+        <button class="clear" on:click={() => { search = ''; discoverReasons = {}; }} aria-label="Clear search">✕</button>
+      {/if}
+
+      {#if showSuggestions && suggestions.length > 0 && !discoverActive}
         <!-- svelte-ignore a11y-no-static-element-interactions -->
         <div class="suggestions">
           {#each suggestions as s}
@@ -159,13 +243,40 @@
       {/if}
     </div>
     <div class="right-controls">
-      <div class="view-toggle">
-        <button class="vbtn" class:active={viewMode === 'stacked'} on:click={() => viewMode = 'stacked'} title="Stacked view">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="9" width="10" height="6" rx="1" opacity="0.4"/><rect x="3" y="5" width="10" height="6" rx="1" opacity="0.65"/><rect x="5" y="1" width="10" height="6" rx="1"/></svg>
-        </button>
-        <button class="vbtn" class:active={viewMode === 'grid'} on:click={() => viewMode = 'grid'} title="Grid view">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
-        </button>
+      <div class="view-controls">
+        <!-- Browse picker: shelf / crate / grid -->
+        <!-- svelte-ignore a11y-no-static-element-interactions -->
+        <!-- svelte-ignore a11y-click-events-have-key-events -->
+        <div class="view-picker-wrap">
+          <button
+            class="vbtn view-picker-btn"
+            class:active={viewMode !== 'graph'}
+            on:click={() => showViewPicker = !showViewPicker}
+            title="Browse view"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <rect x="1" y="1" width="14" height="5" rx="1"/>
+              <rect x="1" y="10" width="14" height="5" rx="1" opacity="0.5"/>
+              <rect x="1" y="7" width="14" height="1.5" rx="0.75" opacity="0.2"/>
+            </svg>
+            <span class="picker-label">{viewMode !== 'graph' ? views.find(v => v.id === viewMode)?.label : 'Browse'}</span>
+          </button>
+
+          {#if showViewPicker}
+            <!-- svelte-ignore a11y-no-static-element-interactions -->
+            <div class="view-dropdown" on:mouseleave={() => showViewPicker = false}>
+              {#each views as v}
+                <button
+                  class="view-option"
+                  class:active={viewMode === v.id}
+                  on:click={() => pickView(v.id)}
+                >{v.label}</button>
+              {/each}
+            </div>
+          {/if}
+        </div>
+
+        <!-- Graph — standalone -->
         <button class="vbtn" class:active={viewMode === 'graph'} on:click={() => viewMode = 'graph'} title="Artist graph">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
             <circle cx="3"  cy="13" r="2"/><circle cx="8"  cy="3"  r="2"/><circle cx="13" cy="10" r="2"/>
@@ -202,32 +313,32 @@
           <div class="skeleton"></div>
         {/each}
       </div>
-    {:else if viewMode === 'stacked'}
-      {#if !selectedRecord}
-        <StackedView
-          records={filteredRecords}
-          {scattering}
-          {reforming}
-          resetKey={stackResetKey}
-          on:open={e => openDetail(e.detail.record, e.detail.artUrl)}
-        />
-      {/if}
+    {:else if viewMode === 'shelf'}
+      <ShelfView
+        records={filteredRecords}
+        reasons={discoverReasons}
+        on:open={e => openDetail(e.detail.record, e.detail.artUrl)}
+      />
+    {:else if viewMode === 'crate'}
+      <CrateView
+        records={filteredRecords}
+        reasons={discoverReasons}
+        resetKey={stackResetKey}
+        on:open={e => openDetail(e.detail.record, e.detail.artUrl)}
+      />
     {:else if viewMode === 'graph'}
       <GraphView
         records={filteredRecords}
-        on:filter={e => { search = e.detail.artist; viewMode = 'stacked'; }}
+        on:filter={e => { search = e.detail.artist; viewMode = 'shelf'; }}
         on:open={e => openDetail(e.detail.record, e.detail.artUrl)}
       />
     {:else}
       <div class="grid">
-        {#each records as record (record.id)}
+        {#each filteredRecords as record (record.id)}
           <AlbumCard
             {record}
-            visible={visibilityMap[record.id]}
-            {scattering}
-            {reforming}
-            scatterX={scatterMap[record.id]?.x ?? 0}
-            scatterY={scatterMap[record.id]?.y ?? 0}
+            visible={true}
+            reason={discoverReasons[record.id] ?? null}
             on:open={e => openDetail(e.detail.record, e.detail.artUrl)}
           />
         {/each}
@@ -262,8 +373,9 @@
     overflow: hidden;
   }
 
-  /* Grid view scrolls within the content area */
-  .content:has(.grid) {
+  /* Scrollable views */
+  .content:has(.grid),
+  .content:has(.shelves) {
     overflow-y: auto;
     padding-bottom: 3rem;
   }
@@ -381,6 +493,35 @@
     max-width: 120px;
   }
 
+  .search-vibe {
+    border-color: rgba(180,160,255,0.3);
+    background: rgba(180,160,255,0.05);
+    padding-right: 52px;
+  }
+  .search-vibe:focus {
+    border-color: rgba(180,160,255,0.45);
+    background: rgba(180,160,255,0.08);
+    box-shadow: 0 0 0 3px rgba(180,160,255,0.07);
+  }
+
+  .record-spin {
+    position: absolute;
+    right: 34px;
+    width: 24px; height: 24px;
+    cursor: pointer;
+    animation: spin 3s linear infinite;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+  }
+  .record-spin:hover { opacity: 1; }
+  .record-spin-fast { animation-duration: 0.55s; opacity: 0.9; cursor: default; }
+  .record-spin svg { width: 100%; height: 100%; display: block; }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+
   .clear {
     position: absolute;
     right: 14px;
@@ -407,13 +548,59 @@
     white-space: nowrap;
   }
 
-  .view-toggle {
+  .view-controls {
     display: flex;
-    gap: 2px;
-    background: rgba(255,255,255,0.05);
-    border-radius: 8px;
-    padding: 3px;
+    align-items: center;
+    gap: 6px;
   }
+
+  .view-picker-wrap {
+    position: relative;
+  }
+
+  .view-picker-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 10px;
+    width: auto;
+  }
+
+  .picker-label {
+    font-size: 11px;
+    letter-spacing: 0.04em;
+  }
+
+  .view-dropdown {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    background: #161616;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    z-index: 100;
+    min-width: 110px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+  }
+
+  .view-option {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.45);
+    font-size: 12px;
+    padding: 7px 12px;
+    border-radius: 7px;
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.12s;
+    letter-spacing: 0.02em;
+  }
+  .view-option:hover { background: rgba(255,255,255,0.07); color: #fff; }
+  .view-option.active { color: #fff; background: rgba(255,255,255,0.1); }
 
   .vbtn {
     background: none;
