@@ -24,9 +24,14 @@
   let dragging     = null;
   let frameId;
 
-  let modalArtMap  = {};
+  let modalArtMap = {};
+  let nodeArtMap  = {};   // artist → art url (for node circles)
   let hoveredGenre = null;
   let clearTimer;
+
+  function sanitizeId(str) {
+    return (str ?? '').replace(/[^a-zA-Z0-9]/g, '-');
+  }
 
   function onNodeEnter(node) {
     clearTimeout(clearTimer);
@@ -38,7 +43,6 @@
     clearTimer  = setTimeout(() => { hoveredGenre = null; }, 80);
   }
 
-  // Modal position: place beside the clicked node, clamped within bounds
   const MODAL_W = 340, MODAL_H = 400;
   $: modalPos = selectedNode ? (() => {
     const n = selectedNode;
@@ -49,7 +53,7 @@
     return { x, y };
   })() : { x: 0, y: 0 };
 
-  // ── Build graph from records ──────────────────────────────────────────
+  // ── Build graph ───────────────────────────────────────────────────────
   function buildGraph(recs, w, h) {
     const artistMap = {};
     for (const r of recs) {
@@ -67,8 +71,7 @@
       ...n,
       x:  cx + (Math.random() - 0.5) * 260,
       y:  cy + (Math.random() - 0.5) * 260,
-      vx: 0,
-      vy: 0,
+      vx: 0, vy: 0,
       r:  Math.max(14, Math.min(30, 10 + n.albums.length * 6)),
     }));
 
@@ -87,22 +90,49 @@
     return { nodes: nodeList, edges: edgeList };
   }
 
-  // ── Force simulation ──────────────────────────────────────────────────
-  function startSimulation(nodeList, edgeList, w, h) {
+  // ── Load art into node circles ────────────────────────────────────────
+  function loadNodeArt(nodeList) {
+    nodeList.forEach(node => {
+      if (node.recs.length > 0 && !nodeArtMap[node.id]) {
+        const r = node.recs[0];
+        requestArt(r.id, r.artist, r.album, url => {
+          nodeArtMap = { ...nodeArtMap, [node.id]: url };
+        });
+      }
+    });
+  }
+
+  // ── Force simulation (never fully stops — ambient drift) ──────────────
+  function startSimulation(nodeList, edgeList, w, h, energize = false) {
     if (frameId) cancelAnimationFrame(frameId);
-    let alpha = 1.0;
+    let alpha    = energize ? 0.5 : 1.0;
+    let driftTick = 0;
     const cx = w / 2, cy = h / 2;
 
     function tick() {
-      alpha *= 0.98;
-      if (alpha < 0.002) { frameId = null; return; }
+      const settled = alpha < 0.004;
+
+      if (!settled) {
+        alpha *= 0.98;
+      } else {
+        // Ambient drift: gentle random nudge every ~45 frames
+        driftTick++;
+        if (driftTick % 45 === 0) {
+          for (const n of nodeList) {
+            n.vx += (Math.random() - 0.5) * 0.3;
+            n.vy += (Math.random() - 0.5) * 0.3;
+          }
+        }
+      }
+
+      const eff = settled ? 0.012 : alpha;
 
       for (const n of nodeList) { n.vx *= 0.55; n.vy *= 0.55; }
 
       // Center gravity
       for (const n of nodeList) {
-        n.vx += (cx - n.x) * 0.018 * alpha;
-        n.vy += (cy - n.y) * 0.018 * alpha;
+        n.vx += (cx - n.x) * 0.018 * eff;
+        n.vy += (cy - n.y) * 0.018 * eff;
       }
 
       // Repulsion
@@ -113,7 +143,7 @@
           const dist = Math.sqrt(dx * dx + dy * dy) || 1;
           const minD = a.r + b.r + 50;
           if (dist < minD * 2.5) {
-            const f = (minD * minD) / (dist * dist) * 0.6 * alpha;
+            const f = (minD * minD) / (dist * dist) * 0.6 * eff;
             const fx = (dx / dist) * f, fy = (dy / dist) * f;
             a.vx -= fx; a.vy -= fy;
             b.vx += fx; b.vy += fy;
@@ -121,13 +151,13 @@
         }
       }
 
-      // Spring attraction along edges
+      // Spring attraction
       for (const e of edgeList) {
         const a = nodeList[e.source], b = nodeList[e.target];
         const dx = b.x - a.x, dy = b.y - a.y;
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
         const target = 100 + (1 - e.strength) * 80;
-        const f = (dist - target) * 0.04 * e.strength * alpha;
+        const f = (dist - target) * 0.04 * e.strength * eff;
         const fx = (dx / dist) * f, fy = (dy / dist) * f;
         a.vx += fx; a.vy += fy;
         b.vx -= fx; b.vy -= fy;
@@ -146,11 +176,11 @@
     frameId = requestAnimationFrame(tick);
   }
 
-  // Rebuild when records change
   $: if (svgEl && records.length) {
     const g = buildGraph(records, width, height);
     nodes = g.nodes;
     edges = g.edges;
+    loadNodeArt(g.nodes);
     startSimulation(g.nodes, g.edges, width, height);
   }
 
@@ -165,6 +195,7 @@
     const g = buildGraph(records, width, height);
     nodes = g.nodes;
     edges = g.edges;
+    loadNodeArt(g.nodes);
     startSimulation(g.nodes, g.edges, width, height);
 
     return () => {
@@ -173,17 +204,18 @@
     };
   });
 
-  // ── Drag ─────────────────────────────────────────────────────────────
+  // ── Drag (re-energizes simulation) ───────────────────────────────────
   function startDrag(e, node) {
     e.preventDefault();
     dragging = node;
+    startSimulation(nodes, edges, width, height, true);
 
     function onMove(ev) {
       const rect = svgEl.getBoundingClientRect();
-      const cx = (ev.touches ? ev.touches[0].clientX : ev.clientX) - rect.left;
-      const cy = (ev.touches ? ev.touches[0].clientY : ev.clientY) - rect.top;
-      dragging.x = Math.max(dragging.r, Math.min(width - dragging.r, cx));
-      dragging.y = Math.max(dragging.r, Math.min(height - dragging.r, cy));
+      const px = (ev.touches ? ev.touches[0].clientX : ev.clientX) - rect.left;
+      const py = (ev.touches ? ev.touches[0].clientY : ev.clientY) - rect.top;
+      dragging.x = Math.max(dragging.r, Math.min(width  - dragging.r, px));
+      dragging.y = Math.max(dragging.r, Math.min(height - dragging.r, py));
       dragging.vx = 0; dragging.vy = 0;
       nodes = nodes;
     }
@@ -227,34 +259,33 @@
       )
     : null;
 
+  $: selectedEdges = selectedNode
+    ? edges.filter(e => nodes[e.source] === selectedNode || nodes[e.target] === selectedNode)
+    : [];
 
   function nodeOpacity(node, idx) {
-    // Selection mode takes priority
     if (selectedNode) {
       if (node === selectedNode) return 1;
-      return connectedSet.has(idx) ? 0.75 : 0.12;
+      return connectedSet.has(idx) ? 0.8 : 0.1;
     }
-    // Genre highlight mode
     if (hoveredGenre) {
-      return node.genre === hoveredGenre ? 1 : 0.12;
+      return node.genre === hoveredGenre ? 1 : 0.1;
     }
     return 1;
   }
 
   function edgeOpacity(e) {
     if (selectedNode) {
-      if (nodes[e.source] === selectedNode || nodes[e.target] === selectedNode)
-        return e.strength > 0.5 ? 0.5 : 0.25;
+      if (nodes[e.source] === selectedNode || nodes[e.target] === selectedNode) return 0;
       return 0.02;
     }
     if (hoveredGenre) {
-      const sameGenre = nodes[e.source]?.genre === hoveredGenre && nodes[e.target]?.genre === hoveredGenre;
-      return sameGenre ? (e.strength > 0.5 ? 0.45 : 0.18) : 0.02;
+      const same = nodes[e.source]?.genre === hoveredGenre && nodes[e.target]?.genre === hoveredGenre;
+      return same ? (e.strength > 0.5 ? 0.45 : 0.18) : 0.02;
     }
     return e.strength > 0.5 ? 0.14 : 0.05;
   }
 
-  // Mini stack constants
   const MINI_CARD = 180;
   const MINI_OFFSET = 26;
   const MINI_TOP = 9;
@@ -265,9 +296,7 @@
   <!-- Legend -->
   <!-- svelte-ignore a11y-no-static-element-interactions -->
   <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <div class="legend"
-    on:mouseleave={() => { clearTimeout(clearTimer); if (!hoveredNode) hoveredGenre = null; }}
-  >
+  <div class="legend" on:mouseleave={() => { clearTimeout(clearTimer); if (!hoveredNode) hoveredGenre = null; }}>
     {#each Object.entries(GENRE_COLORS) as [genre, color]}
       <span
         class="legend-item"
@@ -287,6 +316,16 @@
   <svg bind:this={svgEl} class="graph" on:click={clearSelection}>
 
     <defs>
+      <!-- Glow filter for selected nodes -->
+      <filter id="node-glow" x="-60%" y="-60%" width="220%" height="220%">
+        <feGaussianBlur stdDeviation="5" result="blur"/>
+        <feMerge>
+          <feMergeNode in="blur"/>
+          <feMergeNode in="SourceGraphic"/>
+        </feMerge>
+      </filter>
+
+      <!-- Genre gradient fills -->
       {#each Object.entries(GENRE_COLORS) as [genre, color]}
         <radialGradient id="g-{genre.replace(/\W/g,'')}" cx="35%" cy="35%">
           <stop offset="0%"   stop-color={color} stop-opacity="0.95" />
@@ -297,9 +336,16 @@
         <stop offset="0%"   stop-color="#888" stop-opacity="0.95" />
         <stop offset="100%" stop-color="#888" stop-opacity="0.55" />
       </radialGradient>
+
+      <!-- Clip paths for album art in nodes (updated reactively as nodes move) -->
+      {#each nodes as node (node.id)}
+        <clipPath id="clip-{sanitizeId(node.id)}">
+          <circle cx={node.x} cy={node.y} r={node.r} />
+        </clipPath>
+      {/each}
     </defs>
 
-    <!-- Edges -->
+    <!-- Background edges -->
     <g class="edges">
       {#each edges as e}
         {@const a = nodes[e.source]}
@@ -316,45 +362,109 @@
       {/each}
     </g>
 
+    <!-- Animated flow edges for selected node (genre-colored dashes that travel) -->
+    {#if selectedNode}
+      <g class="edges-flow">
+        {#each selectedEdges as e}
+          {@const a = nodes[e.source]}
+          {@const b = nodes[e.target]}
+          {#if a && b}
+            <!-- Static base line -->
+            <line
+              x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+              stroke={nodeColor(selectedNode.genre)}
+              stroke-width={e.strength > 0.5 ? 1.5 : 1}
+              opacity="0.2"
+            />
+            <!-- Animated traveling dashes -->
+            <line
+              class="edge-flow"
+              x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+              stroke={nodeColor(selectedNode.genre)}
+              stroke-width={e.strength > 0.5 ? 2 : 1.2}
+              stroke-dasharray={e.strength > 0.5 ? '8 6' : '5 8'}
+              opacity={e.strength > 0.5 ? 0.75 : 0.45}
+            />
+          {/if}
+        {/each}
+      </g>
+    {/if}
+
     <!-- Nodes -->
     <g class="nodes">
       {#each nodes as node, idx (node.id)}
-        {@const color = nodeColor(node.genre)}
-        {@const gradId = node.genre ? 'g-' + node.genre.replace(/\W/g,'') : 'g-default'}
-        {@const isHovered = hoveredNode === node}
+        {@const color      = nodeColor(node.genre)}
+        {@const gradId     = node.genre ? 'g-' + node.genre.replace(/\W/g,'') : 'g-default'}
+        {@const isHovered  = hoveredNode === node}
         {@const isSelected = selectedNode === node}
+        {@const hasArt     = !!nodeArtMap[node.id]}
         <!-- svelte-ignore a11y-click-events-have-key-events -->
         <g
           class="node"
           transform="translate({node.x},{node.y})"
           opacity={nodeOpacity(node, idx)}
-          style="transition: opacity 0.25s;"
+          style="transition: opacity 0.3s;"
           on:mouseenter={() => onNodeEnter(node)}
           on:mouseleave={onNodeLeave}
           on:mousedown={e => startDrag(e, node)}
           on:touchstart={e => startDrag(e, node)}
           on:click|stopPropagation={() => handleClick(node)}
         >
-          <!-- Selection ring -->
+          <!-- Pulse ring: radiates outward from selected node -->
           {#if isSelected}
-            <circle r={node.r + 10} fill="none" stroke={color} stroke-width="2" opacity="0.7" />
+            <circle class="pulse-ring" r={node.r + 4} fill="none" stroke={color} stroke-width="2" />
+            <circle class="pulse-ring pulse-ring-2" r={node.r + 4} fill="none" stroke={color} stroke-width="1.5" />
           {/if}
 
-          <!-- Glow ring on hover -->
+          <!-- Selection outer ring -->
+          {#if isSelected}
+            <circle r={node.r + 10} fill="none" stroke={color} stroke-width="1.5" opacity="0.5" />
+          {/if}
+
+          <!-- Hover glow ring -->
           {#if isHovered && !isSelected}
             <circle r={node.r + 8} fill="none" stroke={color} stroke-width="1.5" opacity="0.4" />
           {/if}
 
-          <!-- Main circle -->
+          <!-- Base circle (genre gradient; fades when art is showing) -->
           <circle
+            class="node-circle"
             r={node.r}
             fill="url(#{gradId})"
             stroke={color}
             stroke-width={isHovered || isSelected ? 2 : 1}
-            style="cursor: pointer; transition: r 0.2s;"
+            opacity={hasArt ? 0.25 : 1}
+            filter={isSelected ? 'url(#node-glow)' : 'none'}
           />
 
-          <!-- Label for larger nodes (3+ albums) -->
+          <!-- Album art clipped to circle -->
+          {#if hasArt}
+            <image
+              href={nodeArtMap[node.id]}
+              x={-node.r} y={-node.r}
+              width={node.r * 2} height={node.r * 2}
+              clip-path="url(#clip-{sanitizeId(node.id)})"
+              preserveAspectRatio="xMidYMid slice"
+              style="pointer-events:none;"
+            />
+            <!-- Genre color tint overlay for identification -->
+            <circle
+              r={node.r}
+              fill={color}
+              opacity={isHovered || isSelected ? 0.1 : 0.2}
+              style="pointer-events:none; transition: opacity 0.2s;"
+            />
+            <!-- Stroke ring on top of art -->
+            <circle
+              r={node.r}
+              fill="none"
+              stroke={color}
+              stroke-width={isHovered || isSelected ? 2 : 1}
+              style="pointer-events:none;"
+            />
+          {/if}
+
+          <!-- Label -->
           {#if node.albums.length >= 3 || isHovered || isSelected}
             <text
               dy={node.r + 14}
@@ -369,13 +479,10 @@
     </g>
   </svg>
 
-  <!-- Tooltip (hidden when a node is selected) -->
+  <!-- Tooltip -->
   {#if hoveredNode && !selectedNode}
     {@const n = hoveredNode}
-    <div class="tooltip" style="
-      left: {Math.min(n.x + n.r + 12, width - 220)}px;
-      top:  {Math.max(n.y - 60, 8)}px;
-    ">
+    <div class="tooltip" style="left:{Math.min(n.x + n.r + 12, width - 220)}px; top:{Math.max(n.y - 60, 8)}px;">
       <div class="tt-artist">{n.id}</div>
       <div class="tt-genre" style="color:{nodeColor(n.genre)}">{n.genre}</div>
       <ul class="tt-albums">
@@ -389,7 +496,7 @@
 
   <!-- Artist modal -->
   {#if selectedNode}
-    {@const n = selectedNode}
+    {@const n     = selectedNode}
     {@const color = nodeColor(n.genre)}
     <!-- svelte-ignore a11y-no-static-element-interactions -->
     <!-- svelte-ignore a11y-click-events-have-key-events -->
@@ -397,15 +504,12 @@
 
     <!-- svelte-ignore a11y-no-static-element-interactions -->
     <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <div class="modal" style="left:{modalPos.x}px; top:{modalPos.y}px;" on:click|stopPropagation>
-
-      <!-- Header -->
+    <div class="modal" style="left:{modalPos.x}px; top:{modalPos.y}px; --accent:{color};" on:click|stopPropagation>
       <div class="modal-head">
         <div class="modal-title-group">
           <div class="modal-artist">{n.id}</div>
           <div class="modal-genre" style="color:{color}">{n.genre} · {n.recs.length} album{n.recs.length !== 1 ? 's' : ''}</div>
         </div>
-        <!-- svelte-ignore a11y-click-events-have-key-events -->
         <button class="modal-x" on:click={clearSelection}>✕</button>
       </div>
 
@@ -413,24 +517,20 @@
       <div class="mini-stage">
         <div class="mini-track" style="width:{MINI_CARD}px; height:{MINI_CARD}px;">
           {#each n.recs.slice(0, MINI_MAX) as rec, i}
-            {@const art = modalArtMap[rec.id]}
-            {@const tx = i * MINI_OFFSET}
-            {@const ty = i * -MINI_TOP}
+            {@const art   = modalArtMap[rec.id]}
+            {@const tx    = i * MINI_OFFSET}
+            {@const ty    = i * -MINI_TOP}
             {@const scale = Math.max(0.35, 1 - i * 0.04)}
-            {@const zi = MINI_MAX - i}
+            {@const zi    = MINI_MAX - i}
             <!-- svelte-ignore a11y-click-events-have-key-events -->
             <!-- svelte-ignore a11y-no-static-element-interactions -->
             <div
               class="mini-card"
-              style="
-                width:{MINI_CARD}px; height:{MINI_CARD}px;
-                --tx:{tx}px; --ty:{ty}px; --s:{scale}; z-index:{zi};
-              "
+              style="width:{MINI_CARD}px; height:{MINI_CARD}px; --tx:{tx}px; --ty:{ty}px; --s:{scale}; z-index:{zi};"
               on:click={() => dispatch('open', { record: rec, artUrl: modalArtMap[rec.id] ?? null })}
             >
               {#if art}
-                <img src={art} alt="{rec.album}" class="mini-art"
-                  on:error={e => e.target.style.display = 'none'} />
+                <img src={art} alt={rec.album} class="mini-art" on:error={e => e.target.style.display='none'} />
               {:else}
                 <div class="mini-placeholder">
                   <span>{rec.artist?.replace(/^(The |A )/i,'')[0]?.toUpperCase()}</span>
@@ -460,7 +560,42 @@
     display: block;
   }
 
-  /* Legend */
+  /* ── Animated flowing edges ── */
+  .edge-flow {
+    animation: flow 1.4s linear infinite;
+  }
+
+  @keyframes flow {
+    from { stroke-dashoffset: 28; }
+    to   { stroke-dashoffset: 0; }
+  }
+
+  /* ── Pulse rings on selected node ── */
+  .pulse-ring {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: pulse-ring 2s ease-out infinite;
+  }
+  .pulse-ring-2 {
+    animation-delay: 1s;
+  }
+
+  @keyframes pulse-ring {
+    0%   { transform: scale(1);   opacity: 0.6; }
+    100% { transform: scale(2.4); opacity: 0; }
+  }
+
+  /* ── Node hover scale ── */
+  .node-circle {
+    transform-box: fill-box;
+    transform-origin: center;
+    transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1);
+  }
+  .node:hover .node-circle {
+    transform: scale(1.1);
+  }
+
+  /* ── Legend ── */
   .legend {
     position: absolute;
     top: 1.25rem;
@@ -483,8 +618,7 @@
   }
   .legend-item:not(.muted):hover,
   .legend-item.legend-active { color: rgba(255,255,255,0.9); }
-
-  .legend-item.muted { color: rgba(255,255,255,0.2); margin-top: 4px; cursor: default; }
+  .legend-item.muted { color: rgba(255,255,255,0.2); margin-top: 4px; }
 
   .swatch {
     width: 8px;
@@ -493,7 +627,7 @@
     flex-shrink: 0;
   }
 
-  /* Tooltip */
+  /* ── Tooltip ── */
   .tooltip {
     position: absolute;
     background: rgba(12,12,12,0.92);
@@ -543,7 +677,7 @@
     margin-top: 8px;
   }
 
-  /* Modal */
+  /* ── Modal ── */
   .backdrop {
     position: absolute;
     inset: 0;
@@ -557,6 +691,7 @@
     z-index: 40;
     background: rgba(14,14,14,0.96);
     border: 1px solid rgba(255,255,255,0.1);
+    border-top: 2px solid var(--accent, rgba(255,255,255,0.2));
     border-radius: 18px;
     padding: 1.5rem 2rem 1.25rem;
     backdrop-filter: blur(20px);
@@ -565,6 +700,7 @@
     align-items: center;
     gap: 1.25rem;
     min-width: 320px;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.06);
   }
 
   .modal-head {
@@ -602,12 +738,11 @@
   }
   .modal-x:hover { color: rgba(255,255,255,0.7); }
 
-  /* Mini stack */
+  /* ── Mini stack ── */
   .mini-stage {
     display: flex;
     align-items: flex-end;
     justify-content: flex-start;
-    /* Extra right/top padding so stacked cards don't clip */
     padding-top: 80px;
     padding-right: 200px;
   }
@@ -624,26 +759,24 @@
     cursor: pointer;
     transform: translateX(var(--tx)) translateY(var(--ty)) scale(var(--s));
     transition:
-      transform 0.28s cubic-bezier(0.2,0,0,1),
+      transform  0.28s cubic-bezier(0.2,0,0,1),
       filter     0.2s ease,
       box-shadow 0.28s ease;
   }
 
-  /* Desaturate all when any card hovered */
   .mini-track:has(.mini-card:hover) .mini-card {
     filter: grayscale(60%) brightness(0.7);
     transition: filter 0.2s ease, transform 0.28s cubic-bezier(0.2,0,0,1), box-shadow 0.28s ease;
   }
 
-  /* Lift and vivid on hover */
   .mini-card:hover {
     transform: translateX(var(--tx)) translateY(calc(var(--ty) - 60px)) scale(var(--s)) !important;
     filter: saturate(1.3) brightness(1.1) !important;
     z-index: 999 !important;
     box-shadow: 0 24px 60px rgba(0,0,0,0.85);
     transition:
-      transform 0.15s cubic-bezier(0.15,0,0,1),
-      filter    0.12s ease,
+      transform  0.15s cubic-bezier(0.15,0,0,1),
+      filter     0.12s ease,
       box-shadow 0.15s ease !important;
   }
 
