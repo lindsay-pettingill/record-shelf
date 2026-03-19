@@ -47,7 +47,7 @@
     sorted.forEach(r => {
       requestArt(r.id, r.artist, r.album, url => {
         artMap = { ...artMap, [r.id]: url };
-      });
+      }, r.imageUrl);
     });
   });
 

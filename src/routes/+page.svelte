@@ -65,7 +65,7 @@
     if (!records.length) return;
     const r = records[Math.floor(Math.random() * records.length)];
     import('$lib/artloader.js').then(({ requestArt }) => {
-      requestArt(r.id, r.artist, r.album, url => openDetail(r, url));
+      requestArt(r.id, r.artist, r.album, url => openDetail(r, url), r.imageUrl);
     });
   }
 
@@ -141,7 +141,7 @@ onMount(async () => {
     selectedArt = null; // will resolve from cache via artloader
     // grab from cache
     import('$lib/artloader.js').then(({ requestArt }) => {
-      requestArt(next.id, next.artist, next.album, url => { selectedArt = url; });
+      requestArt(next.id, next.artist, next.album, url => { selectedArt = url; }, next.imageUrl);
     });
   }
 

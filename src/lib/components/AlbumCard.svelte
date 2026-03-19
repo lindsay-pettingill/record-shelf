@@ -18,7 +18,7 @@
   onMount(() => {
     requestArt(record.id, record.artist, record.album, (url) => {
       artUrl = url;
-    });
+    }, record.imageUrl);
   });
 
   function handleArtError() {

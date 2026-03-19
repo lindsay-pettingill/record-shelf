@@ -45,7 +45,7 @@
     if (!relatedArtMap[r.id]) {
       requestArt(r.id, r.artist, r.album, url => {
         relatedArtMap = { ...relatedArtMap, [r.id]: url };
-      });
+      }, r.imageUrl);
     }
   });
 

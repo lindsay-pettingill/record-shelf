@@ -24,7 +24,7 @@
     records.forEach(r => {
       requestArt(r.id, r.artist, r.album, url => {
         artMap = { ...artMap, [r.id]: url };
-      });
+      }, r.imageUrl);
     });
   });
 
@@ -33,7 +33,7 @@
       if (!artMap[r.id]) {
         requestArt(r.id, r.artist, r.album, url => {
           artMap = { ...artMap, [r.id]: url };
-        });
+        }, r.imageUrl);
       }
     });
   }

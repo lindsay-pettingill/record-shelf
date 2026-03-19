@@ -86,7 +86,7 @@
         const r = node.recs[0];
         requestArt(r.id, r.artist, r.album, url => {
           nodeArtMap = { ...nodeArtMap, [node.id]: url };
-        });
+        }, r.imageUrl);
       }
     });
   }
@@ -235,7 +235,7 @@
     const r = node.recs[0];
     requestArt(r.id, r.artist, r.album, url => {
       dispatch('open', { record: r, artUrl: url });
-    });
+    }, r.imageUrl);
   }
 
   function clearSelection() { selectedNode = null; }

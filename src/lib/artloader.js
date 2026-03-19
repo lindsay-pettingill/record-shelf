@@ -25,7 +25,14 @@ function initFromStorage() {
 
 if (typeof window !== 'undefined') initFromStorage();
 
-export function requestArt(id, artist, album, callback) {
+export function requestArt(id, artist, album, callback, overrideUrl) {
+  if (overrideUrl) {
+    const key = `ra:${id}`;
+    cache.set(key, overrideUrl);
+    try { localStorage.setItem(key, overrideUrl); } catch {}
+    callback(overrideUrl);
+    return;
+  }
   const key = `ra:${id}`;
   if (cache.has(key)) { callback(cache.get(key)); return; }
   queue.push({ type: 'art', key, id, artist, album, callback });
@@ -51,6 +58,10 @@ async function drain() {
       if (mbid) {
         mbIdCache.set(`ri:${item.id}`, mbid);
         try { localStorage.setItem(`ri:${item.id}`, mbid); } catch {}
+      }
+      if (url && typeof window !== 'undefined') {
+        const img = new Image();
+        img.src = url;
       }
       item.callback(url);
     } else if (item.type === 'details') {
@@ -79,7 +90,7 @@ async function resolveArt(artist, album) {
       const releases = data.releases ?? [];
       if (!releases.length) continue;
       const mbid = releases[0].id;
-      return { url: `https://coverartarchive.org/release/${mbid}/front`, mbid };
+      return { url: `https://coverartarchive.org/release/${mbid}/front-500`, mbid };
     } catch { continue; }
   }
   return { url: null, mbid: null };
