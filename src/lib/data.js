@@ -32,18 +32,43 @@ export const SAMPLE_RECORDS = [
   { id: 29, artist: 'Harry Nilsson',               album: 'Duit On Mon Dei',                        year: 1975, genre: 'Pop',                    tags: '',           format: 'LP',          notes: '' },
 ];
 
+const CACHE_KEY = 'rc:collection';
+
 export async function fetchCollection() {
+  // Return cached data immediately if available, then refresh in background
+  const cached = getCachedCollection();
+
+  const fetchFresh = async () => {
+    try {
+      const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      const parsed = parseCSV(text);
+      if (parsed.length === 0) throw new Error('Empty result');
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify(parsed)); } catch {}
+      return parsed;
+    } catch (e) {
+      console.warn('Sheet fetch failed:', e.message);
+      return null;
+    }
+  };
+
+  if (cached) {
+    fetchFresh(); // refresh cache in background, don't await
+    return cached;
+  }
+
+  return (await fetchFresh()) ?? SAMPLE_RECORDS;
+}
+
+function getCachedCollection() {
+  if (typeof localStorage === 'undefined') return null;
   try {
-    const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const text = await res.text();
-    const parsed = parseCSV(text);
-    if (parsed.length === 0) throw new Error('Empty result');
-    return parsed;
-  } catch (e) {
-    console.warn('Sheet fetch failed, using sample data:', e.message);
-    return SAMPLE_RECORDS;
+    const raw = localStorage.getItem(CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
   }
 }
 
